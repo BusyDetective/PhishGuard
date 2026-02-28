@@ -1,0 +1,394 @@
+import { useEffect, useState, useCallback } from 'react'
+import { supabase } from '../../lib/supabase'
+import { useClickOutside } from '../../hooks/useClickOutside'
+import { Plus, Trash2, GripVertical, ArrowUp, ArrowDown } from 'lucide-react'
+
+type Step = {
+  id?: string
+  step_number: number
+  title: string
+  instructions: string
+  input_type: 'confirm' | 'text' | 'number' | 'url' | 'file' | 'choice'
+  required: boolean
+  resource_url: string
+  button_text?: string | null
+}
+
+const INPUT_TYPES: Step['input_type'][] = ['confirm', 'text', 'number', 'url', 'file', 'choice']
+
+export default function EditTemplateStepsModal({
+  templateId,
+  onClose,
+  onSaved,
+}: {
+  templateId: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [steps, setSteps] = useState<Step[]>([])
+  const [templateName, setTemplateName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Prevent closing while saving or loading
+  const handleClose = useCallback(() => {
+    if (loading || saving) {
+      return // Don't close while loading or saving
+    }
+    onClose()
+  }, [loading, saving, onClose])
+
+  const modalRef = useClickOutside<HTMLDivElement>(handleClose)
+
+  useEffect(() => {
+    loadData()
+  }, [templateId])
+
+  async function loadData() {
+    setLoading(true)
+    try {
+      // Load template name
+      const { data: templateData } = await supabase
+        .from('onboarding_templates')
+        .select('name')
+        .eq('id', templateId)
+        .single()
+
+      if (templateData) {
+        setTemplateName(templateData.name)
+      }
+
+      // Load steps
+      const { data: stepsData, error: stepsError } = await supabase
+        .from('onboarding_template_steps')
+        .select('*')
+        .eq('template_id', templateId)
+        .order('step_number', { ascending: true })
+
+      if (stepsError) throw stepsError
+
+      // Ensure all string fields have default values to prevent null.trim() errors
+      setSteps((stepsData || []).map(step => ({
+        ...step,
+        title: step.title || '',
+        instructions: step.instructions || '',
+        resource_url: step.resource_url || '',
+        button_text: step.button_text || ''
+      })))
+    } catch (err: any) {
+      setError(err.message || 'Failed to load steps.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function addStep() {
+    const newStepNumber = steps.length > 0 ? Math.max(...steps.map(s => s.step_number)) + 1 : 1
+    setSteps([
+      ...steps,
+      {
+        step_number: newStepNumber,
+        title: '',
+        instructions: '',
+        input_type: 'confirm',
+        required: true,
+        resource_url: '',
+        button_text: ''
+      }
+    ])
+  }
+
+  function removeStep(index: number) {
+    const step = steps[index]
+    if (step.id && !confirm(`Are you sure you want to delete step ${step.step_number}: "${step.title}"?`)) {
+      return
+    }
+    setSteps(steps.filter((_, i) => i !== index).map((s, i) => ({ ...s, step_number: i + 1 })))
+  }
+
+  function updateStep(index: number, field: keyof Step, value: any) {
+    setSteps(steps.map((s, i) => i === index ? { ...s, [field]: value } : s))
+  }
+
+  function moveStep(index: number, direction: 'up' | 'down') {
+    if (direction === 'up' && index === 0) return
+    if (direction === 'down' && index === steps.length - 1) return
+
+    const newSteps = [...steps]
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    ;[newSteps[index], newSteps[targetIndex]] = [newSteps[targetIndex], newSteps[index]]
+
+    // Update step numbers
+    newSteps.forEach((s, i) => {
+      s.step_number = i + 1
+    })
+
+    setSteps(newSteps)
+  }
+
+  async function saveSteps() {
+    setSaving(true)
+    setError(null)
+
+    // Validate steps
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
+      if (!(step.title || '').trim()) {
+        setError(`Step ${i + 1} must have a title.`)
+        setSaving(false)
+        return
+      }
+    }
+
+    try {
+      // Get existing step IDs to know which to delete
+      const { data: existingSteps } = await supabase
+        .from('onboarding_template_steps')
+        .select('id')
+        .eq('template_id', templateId)
+
+      const existingIds = (existingSteps || []).map(s => s.id)
+      const stepsToKeep = steps.filter(s => s.id).map(s => s.id!)
+      const stepsToDelete = existingIds.filter(id => !stepsToKeep.includes(id))
+
+      // Delete removed steps
+      if (stepsToDelete.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('onboarding_template_steps')
+          .delete()
+          .in('id', stepsToDelete)
+
+        if (deleteError) throw deleteError
+      }
+
+      // Update or insert steps
+      for (const step of steps) {
+        const stepData = {
+          template_id: templateId,
+          step_number: step.step_number,
+          title: (step.title || '').trim(),
+          instructions: (step.instructions || '').trim() || null,
+          input_type: step.input_type,
+          required: step.required,
+          resource_url: (step.resource_url || '').trim() || null,
+          button_text: step.input_type === 'url' ? ((step.button_text || '').trim() || null) : null,
+          updated_at: new Date().toISOString()
+        }
+
+        if (step.id) {
+          // Update existing step
+          const { error: updateError } = await supabase
+            .from('onboarding_template_steps')
+            .update(stepData)
+            .eq('id', step.id)
+
+          if (updateError) throw updateError
+        } else {
+          // Insert new step
+          const { error: insertError } = await supabase
+            .from('onboarding_template_steps')
+            .insert(stepData)
+
+          if (insertError) throw insertError
+        }
+      }
+
+      onSaved()
+    } catch (err: any) {
+      setError(err.message || 'Failed to save steps.')
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black/25 flex items-center justify-center p-4 z-50">
+        <div ref={modalRef} className="card w-full max-w-4xl">
+          <div className="p-8 text-center">
+            <div className="text-sm muted">Loading steps...</div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/25 flex items-center justify-center p-4 z-50">
+      <div ref={modalRef} className="card w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="px-5 pt-5 pb-3 border-b border-brand-line flex-shrink-0">
+          <div className="font-heading text-lg">Manage Steps: {templateName}</div>
+          <div className="text-sm muted">Add, edit, and reorder onboarding steps for this template.</div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {steps.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              No steps yet. Click "Add Step" to create the first step.
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {steps.map((step, index) => (
+              <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <GripVertical size={16} className="text-gray-400" />
+                    <span className="font-medium text-sm text-gray-700">Step {step.step_number}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => moveStep(index, 'up')}
+                      disabled={index === 0}
+                      className="p-1 text-gray-600 hover:text-gray-900 disabled:opacity-30"
+                      title="Move up"
+                    >
+                      <ArrowUp size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveStep(index, 'down')}
+                      disabled={index === steps.length - 1}
+                      className="p-1 text-gray-600 hover:text-gray-900 disabled:opacity-30"
+                      title="Move down"
+                    >
+                      <ArrowDown size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeStep(index)}
+                      className="p-1 text-red-600 hover:text-red-900"
+                      title="Delete step"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm mb-1">Step Title <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      className="w-full rounded-lg border border-brand-line px-3 py-2 text-sm focus-ring bg-white"
+                      value={step.title}
+                      onChange={(e) => updateStep(index, 'title', e.target.value)}
+                      placeholder="e.g., Complete Identity Verification"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm mb-1">Instructions</label>
+                    <textarea
+                      className="w-full rounded-lg border border-brand-line px-3 py-2 text-sm focus-ring bg-white"
+                      value={step.instructions}
+                      onChange={(e) => updateStep(index, 'instructions', e.target.value)}
+                      rows={3}
+                      placeholder="Instructions for completing this step"
+                    />
+                    <div className="mt-1.5 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                      <p className="font-semibold mb-1">Available variables:</p>
+                      <ul className="list-disc list-inside space-y-0.5 text-blue-700">
+                        <li><code className="bg-blue-100 px-1 rounded">{"{{brokerage_name}}"}</code> - Brokerage name</li>
+                        <li><code className="bg-blue-100 px-1 rounded">{"{{minimum_deposit}}"}</code> - GBP deposit amount</li>
+                        <li><code className="bg-blue-100 px-1 rounded">{"{{minimum_deposit_eur}}"}</code> - EUR deposit amount</li>
+                        <li><code className="bg-blue-100 px-1 rounded">{"{{minimum_deposit_cad}}"}</code> - CAD deposit amount</li>
+                        <li><code className="bg-blue-100 px-1 rounded">{"{{currency}}"}</code> - Currency symbol (€, C$, £)</li>
+                        <li><code className="bg-blue-100 px-1 rounded">{"{{currency_code}}"}</code> - Currency code (EUR, CAD, GBP)</li>
+                        <li><code className="bg-blue-100 px-1 rounded">{"{{deposit_amount}}"}</code> - Amount based on intern's country</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm mb-1">Input Type</label>
+                      <select
+                        className="w-full rounded-lg border border-brand-line px-3 py-2 text-sm focus-ring bg-white"
+                        value={step.input_type}
+                        onChange={(e) => updateStep(index, 'input_type', e.target.value as Step['input_type'])}
+                      >
+                        {INPUT_TYPES.map(type => (
+                          <option key={type} value={type}>
+                            {type.charAt(0).toUpperCase() + type.slice(1)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm mb-1">Resource URL</label>
+                      <input
+                        type="url"
+                        className="w-full rounded-lg border border-brand-line px-3 py-2 text-sm focus-ring bg-white"
+                        value={step.resource_url}
+                        onChange={(e) => updateStep(index, 'resource_url', e.target.value)}
+                        placeholder="Optional link to resources"
+                      />
+                    </div>
+                  </div>
+
+                  {step.input_type === 'url' && (
+                    <div>
+                      <label className="block text-sm mb-1">Button Text</label>
+                      <input
+                        type="text"
+                        className="w-full rounded-lg border border-brand-line px-3 py-2 text-sm focus-ring bg-white"
+                        value={step.button_text || ''}
+                        onChange={(e) => updateStep(index, 'button_text', e.target.value)}
+                        placeholder="e.g., Open Account, Visit Website (defaults to 'Open Link' if empty)"
+                      />
+                      <div className="text-xs text-gray-500 mt-1">
+                        Custom text for the button that opens the URL. Leave empty for default "Open Link" text.
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={step.required}
+                        onChange={(e) => updateStep(index, 'required', e.target.checked)}
+                        className="rounded border-brand-line"
+                      />
+                      <span className="text-sm">Required step</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addStep}
+            className="mt-4 w-full btn btn-ghost border-2 border-dashed border-gray-300 hover:border-gray-400"
+          >
+            <Plus size={16} className="mr-1" />
+            Add Step
+          </button>
+        </div>
+
+        {error && (
+          <div className="px-5 pb-3 text-sm text-red-600 flex-shrink-0">{error}</div>
+        )}
+
+        <div className="px-5 pb-5 pt-3 border-t border-brand-line flex items-center justify-end gap-2 flex-shrink-0">
+          <button type="button" className="btn btn-ghost" onClick={handleClose} disabled={saving || loading}>Cancel</button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={saveSteps}
+            disabled={saving}
+          >
+            {saving ? 'Saving…' : 'Save Steps'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+

@@ -1,21 +1,216 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8" />
   <title>PhishGuard</title>
   <style>
-    body { font-family: Arial; width: 250px; padding: 10px; }
-    #risk { font-size: 22px; font-weight: bold; }
-    .safe { color: green; }
-    .warn { color: orange; }
-    .danger { color: red; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont;
+      background: #0f172a;
+      color: #e5e7eb;
+      margin: 0;
+      padding: 14px;
+      width: 320px;
+    }
+    h1 {
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+    .risk {
+      font-size: 22px;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    .safe { color: #22c55e; }
+    .warn { color: #f59e0b; }
+    .danger { color: #ef4444; }
+
+    .box {
+      background: #020617;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid #1e293b;
+    }
+
+    .label {
+      color: #94a3b8;
+      font-size: 11px;
+    }
+
+    ul {
+      padding-left: 16px;
+      margin: 6px 0 0;
+    }
+
+    li {
+      font-size: 12px;
+    }
+
+    .footer {
+      font-size: 10px;
+      color: #64748b;
+      text-align: center;
+      margin-top: 6px;
+    }
+    .locked {
+      opacity: 0.45;
+      cursor: not-allowed;
+      background: #020617 !important;
+      color: #64748b !important;
+      border: 1px solid #1e293b !important;
+    }
+    .export-btn.locked {
+      pointer-events: auto;
+    }
+
+    .upgrade-hint {
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e1e1e;
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      z-index: 9999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    
+    /* 🔐 Upgrade Panel */
+  .upgrade-panel {
+    margin-top: 12px;
+    padding: 12px;
+    border-top: 1px solid #2a2a2a;
+    text-align: center;
+  }
+
+  .upgrade-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .upgrade-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 10px 0;
+    font-size: 12px;
+    opacity: 0.9;
+  }
+
+  .upgrade-features li {
+    margin: 4px 0;
+  }
+
+  .upgrade-btn {
+    background: #4f46e5;
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  .upgrade-btn:hover {
+    background: #4338ca;
+  }
+
   </style>
 </head>
 <body>
-  <h3>PhishGuard</h3>
-  <p id="url"></p>
-  <p id="risk">Loading...</p>
+
+  <h1>🛡 PhishGuard</h1>
+
+  <div id="pageInfo" class="box">
+    <div class="label">Current page</div>
+    <div id="pageUrl">Loading...</div>
+  </div>
+
+  <div id="riskBox" class="box">
+    <div class="label">Overall risk</div>
+    <div id="riskScore" class="risk">—</div>
+  </div>
+
+  <div class="box">
+    <div class="label">Link analysis</div>
+    <div>🔴 High risk: <span id="highCount">—</span></div>
+    <div>🟡 Suspicious: <span id="warnCount">—</span></div>
+    <div>🔗 Total scanned: <span id="totalCount">—</span></div>
+  </div>
+
+  <div class="box">
+    <div class="label">Top risky domains</div>
+    <ul id="domains"></ul>
+  </div>
+
+  <div class="footer">
+    AI-powered phishing protection
+  </div>
+  
+  <div class="box">
+  <div class="label">Protection settings</div>
+
+  <button id="exportJSON" class="export-btn">
+    Export Scan Report (JSON)
+  </button>
+
+  <button id="exportCSV" class="export-btn">
+    Export Scan Report (CSV)
+  </button>
+
+  <button id="exportPdf" class="pg-btn">
+    Download PDF Report
+  </button>
+
+
+  <label style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+    <input type="checkbox" id="blockToggle">
+    Enable Block Mode
+  </label>
+  
+  <label class="toggle">
+    <input type="checkbox" id="heatmapToggle" checked />
+    <span>Show risk highlights</span>
+  </label>
+
+  <div style="margin-top:10px;">
+    <div class="label">Block risk threshold</div>
+    <input type="range" id="threshold" min="20" max="90" step="5">
+    <div id="thresholdValue"></div>
+  </div>
+</div>
+
+  <div class="box">
+    <div class="label">Trusted domains</div>
+
+    <input
+      id="trustedInput"
+      placeholder="example.com"
+      style="width:100%;margin-top:6px;"
+    />
+
+    <button id="addTrusted" style="margin-top:8px;">
+      Add domain
+    </button>
+
+    <ul id="trustedList" style="margin-top:8px;font-size:12px;"></ul>
+  </div>
+  
+  <!-- 🔐 Upgrade Panel -->
+  <div id="upgradePanel" class="upgrade-panel" style="display:none;">
+    <div class="upgrade-title">Upgrade to PhishGuard Pro</div>
+    <ul class="upgrade-features">
+      <li>✔ Block malicious links</li>
+      <li>✔ CSV / JSON exports</li>
+      <li>✔ Full forensic PDF reports</li>
+      <li>✔ Advanced AI confidence</li>
+      <li>✔ Scan history</li>
+    </ul>
+    <button id="upgradeBtn" class="upgrade-btn">Upgrade to Pro</button>
+  </div>
 
   <script src="popup.js"></script>
 </body>
 </html>
-

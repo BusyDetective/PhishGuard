@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>PhishGuard Report</title>
+  <style>
+    .controls {
+      margin: 20px 0;
+      display: flex;
+      gap: 10px;
+    }
+
+    .controls button {
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: #f3f4f6;
+    }
+
+    @media print {
+      .controls {
+        display: none;
+      }
+    }
+
+    body {
+      font-family: system-ui, sans-serif;
+      padding: 30px;
+      background: #fff;
+      color: #111;
+    }
+    h1 {
+      margin-bottom: 6px;
+    }
+    .meta {
+      color: #555;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 16px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      font-size: 12px;
+      text-align: left;
+    }
+    th {
+      background: #f3f4f6;
+    }
+    .chart {
+      margin-top: 20px;
+    }
+
+    .bar {
+      height: 18px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    .bar-label {
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .bar-high {
+      background: #ef4444;
+    }
+
+    .bar-warn {
+      background: #f59e0b;
+    }
+
+    .bar-safe {
+      background: #22c55e;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .badge.low { background: #16a34a; }
+    .badge.medium { background: #facc15; color: #111; }
+    .badge.high { background: #f97316; }
+    .badge.critical { background: #dc2626; }
+
+    .badge.conf-high { background: #2563eb; }
+    .badge.conf-medium { background: #64748b; }
+    .badge.conf-low { background: #9ca3af; }
+
+
+    .badge.safe { background: #16a34a; }
+    .badge.warn { background: #f59e0b; }
+    .badge.danger { background: #dc2626; }
+
+    .footer {
+      margin-top: 40px;
+      font-size: 11px;
+      color: #666;
+      text-align: center;
+    }
+    .disclaimer {
+      font-size: 12px;
+      color: #444;
+      background: #f9fafb;
+      border-left: 4px solid #ef4444;
+      padding: 10px 12px;
+    }
+
+    .header {
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+    }
+
+    .header .sub {
+      font-size: 12px;
+      color: #555;
+      margin-top: 4px;
+    }
+    @media print {
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+    }
+
+    /* ===== Risk Evidence Table Fix ===== */
+    table {
+      table-layout: fixed;
+      width: 100%;
+    }
+
+    th, td {
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      white-space: normal;
+    }
+
+    td:first-child {
+      max-width: 280px;   /* URL column */
+    }
+
+    td:nth-child(4) {
+      max-width: 220px;   /* Reasons column */
+    }
+
+    /* Print-safe */
+    @media print {
+      body {
+        zoom: 100%;
+      }
+
+      table {
+        font-size: 11px;
+        page-break-inside: auto;
+      }
+
+      thead {
+        display: table-header-group;
+      }
+
+      tr {
+        page-break-inside: avoid !important;
+        page-break-after: auto;
+      }
+    }
+
+    
+    tr {
+      page-break-inside: avoid;
+    }
+
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🛡 PhishGuard Security Scan Report</h1>
+  <div class="meta" id="brandingMeta"></div>
+  <div class="sub">
+    AI-powered Phishing Detection · Version <span id="version"></span>
+  </div>
+</div>
+
+<div class="meta" id="meta"></div>
+<div class="controls">
+  <button id="btnPrint">Download PDF</button>
+  <button id="btnCSV" data-pro-only="true">Download CSV</button>
+  <button id="btnJSON" data-pro-only="true">Download JSON</button>
+</div>
+
+
+<h3>Executive Summary</h3>
+<div id="execSummary" style="
+  background:#f8fafc;
+  border:1px solid #e5e7eb;
+  padding:14px;
+  border-radius:8px;
+  font-size:13px;
+  line-height:1.6;
+  margin-bottom:20px;
+"></div>
+
+<h3>Risk Disclaimer</h3>
+<p class="disclaimer">
+This report is generated using automated AI and heuristic-based analysis.
+While PhishGuard strives for high accuracy, results should be used as
+an advisory signal and not as a sole basis for security decisions.
+Always validate critical links manually.
+</p>
+
+<h3>Summary</h3>
+<table>
+  <tr><th>High Risk</th><td id="high"></td></tr>
+  <tr><th>Suspicious</th><td id="warn"></td></tr>
+  <tr><th>Total Scanned</th><td id="total"></td></tr>
+  <tr>
+    <th>Overall Risk</th>
+    <td>
+      <span id="overall" style="
+        display:inline-block;
+        padding:4px 10px;
+        border-radius:999px;
+        background:#dc2626;
+        color:#fff;
+        font-weight:600;
+        font-size:12px;
+      "></span>
+    </td>
+  </tr>
+  <tr><th>Severity Level</th><td id="severity"></td></tr>
+  <tr data-pro-only="true"><th>AI Confidence</th><td id="confidence"></td></tr>
+
+</table>
+
+<h3 style="margin-top:30px;" data-pro-only="true">Risk Distribution</h3>
+
+<div class="chart" data-pro-only="true">
+  <div class="bar-label">High Risk (<span id="highPct"></span>%)</div>
+  <div class="bar bar-high" id="highBar"></div>
+
+  <div class="bar-label">Suspicious (<span id="warnPct"></span>%)</div>
+  <div class="bar bar-warn" id="warnBar"></div>
+
+  <div class="bar-label">Safe (<span id="safePct"></span>%)</div>
+  <div class="bar bar-safe" id="safeBar"></div>
+</div>
+
+<h3 style="margin-top:30px;" data-pro-only="true">Security Recommendations</h3>
+<ul id="recommendations" data-pro-only="true" style="
+  font-size:13px;
+  line-height:1.7;
+  margin-bottom:20px;
+"></ul>
+
+<h3 style="margin-top:30px;">Top Risky Domains</h3>
+<table>
+  <thead>
+    <tr><th>Domain</th><th>Count</th></tr>
+  </thead>
+  <tbody id="domains"></tbody>
+</table>
+
+<h3 data-pro-only="true">Risk Evidence</h3>
+
+<table data-pro-only="true">
+  <thead>
+    <tr>
+      <th>URL</th>
+      <th>Domain</th>
+      <th>Risk</th>
+      <th>Reasons</th>
+    </tr>
+  </thead>
+  <tbody id="evidence"></tbody>
+</table>
+
+<div class="footer">
+  Generated by PhishGuard · Detection: AI Model + Heuristics ·
+  Generated on <span id="generatedAt"></span>
+</div>
+
+<script src="report.js"></script>
+
+</body>
+</html>
